@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Device, Call } from "./types";
+import { MqttService } from "./mqttService";
 // @ts-ignore
 import bellIcon from "./assets/images/family_bell_icon_1786708286221.jpg";
 import { 
@@ -112,10 +113,13 @@ export default function App() {
   const [isRegistered, setIsRegistered] = useState<boolean>(false);
   const [isRegistering, setIsRegistering] = useState<boolean>(false);
 
-  // Sync state from server
+  // Sync state from serverless broker
   const [devices, setDevices] = useState<Device[]>([]);
   const [activeCalls, setActiveCalls] = useState<Call[]>([]);
   const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  // Family code configuration
+  const [familyGroupCode, setFamilyGroupCode] = useState<string>("");
 
   // UI state
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
@@ -132,10 +136,10 @@ export default function App() {
 
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Auto-reconnect SSE ref
-  const sseRef = useRef<EventSource | null>(null);
+  // Auto-reconnect MQTT instance ref
+  const mqttServiceRef = useRef<MqttService | null>(null);
 
-  // 1. Initialize Device ID & Device Name
+  // 1. Initialize Device ID, Name & Family Code
   useEffect(() => {
     let currentId = localStorage.getItem("family_bell_device_id");
     if (!currentId) {
@@ -149,105 +153,55 @@ export default function App() {
       setDeviceName(currentName);
       setInputName(currentName);
       setIsRegistered(true);
-      // Register device automatically on the server
-      registerDeviceOnServer(currentId, currentName);
     }
+
+    let currentCode = localStorage.getItem("family_bell_group_code");
+    if (!currentCode) {
+      currentCode = `家族ベル-${Math.floor(1000 + Math.random() * 9000)}`;
+      localStorage.setItem("family_bell_group_code", currentCode);
+    }
+    setFamilyGroupCode(currentCode);
   }, []);
 
-  // 2. Fetch initial state and configure Real-Time Connection (SSE)
+  // 2. Configure Real-Time Connection (MQTT)
   useEffect(() => {
-    if (!deviceId || !deviceName || !isRegistered) return;
+    if (!deviceId || !deviceName || !isRegistered || !familyGroupCode) return;
 
-    // Load initial state
-    fetch("/api/state")
-      .then((res) => res.json())
-      .then((data) => {
-        setDevices(data.devices || []);
-        setActiveCalls(data.activeCalls || []);
-      })
-      .catch((err) => console.error("Error fetching state:", err));
-
-    // Connect Server-Sent Events (SSE)
-    function connectSSE() {
-      if (sseRef.current) {
-        sseRef.current.close();
-      }
-
-      const es = new EventSource(`/api/stream?deviceId=${deviceId}`);
-      sseRef.current = es;
-
-      es.onopen = () => {
-        setIsOnline(true);
-      };
-
-      es.onerror = () => {
-        setIsOnline(false);
-        // Try reconnecting in 5 seconds
-        setTimeout(() => {
-          if (isRegistered) connectSSE();
-        }, 5000);
-      };
-
-      es.addEventListener("devices", (e: any) => {
-        const data = JSON.parse(e.data);
-        setDevices(data);
-      });
-
-      es.addEventListener("activeCalls", (e: any) => {
-        const data = JSON.parse(e.data);
-        setActiveCalls(data);
-      });
-
-      es.addEventListener("call-stopped", (e: any) => {
-        const data = JSON.parse(e.data);
-        // If this device was the one who sent the call, and the call was stopped by the recipient (not ourselves)
-        if (data.callerDeviceId === deviceId && data.stoppedByDeviceId !== deviceId) {
+    // Create and connect MQTT Service
+    const service = new MqttService(
+      deviceId,
+      deviceName,
+      familyGroupCode,
+      {
+        onDevicesUpdated: (devs) => {
+          setDevices(devs);
+        },
+        onCallsUpdated: (calls) => {
+          setActiveCalls(calls);
+        },
+        onCallStopped: (info) => {
           setStoppedNotification({
-            message: `🔔 「${data.stoppedByDeviceName}」がベルを止めました！`,
+            message: `🔔 「${info.stoppedByDeviceName}」がベルを止めました！`,
             id: Date.now(),
           });
           if (isAudioEnabled) {
             playNotificationBeep();
           }
+        },
+        onConnectionStatusChanged: (status) => {
+          setIsOnline(status);
         }
-      });
-    }
-
-    connectSSE();
-
-    // Heartbeat to keep connection alive
-    const heartbeatInterval = setInterval(() => {
-      fetch("/api/devices/heartbeat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: deviceId }),
-      }).catch((e) => console.warn("Heartbeat error", e));
-    }, 10000);
-
-    // Notify server immediately on close / unload
-    const handleUnload = () => {
-      if (deviceId) {
-        fetch("/api/devices/offline", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: deviceId }),
-          keepalive: true,
-        }).catch(() => {});
       }
-    };
+    );
 
-    window.addEventListener("beforeunload", handleUnload);
-    window.addEventListener("pagehide", handleUnload);
+    mqttServiceRef.current = service;
+    service.connect();
 
     return () => {
-      clearInterval(heartbeatInterval);
-      window.removeEventListener("beforeunload", handleUnload);
-      window.removeEventListener("pagehide", handleUnload);
-      if (sseRef.current) {
-        sseRef.current.close();
-      }
+      service.disconnect();
+      mqttServiceRef.current = null;
     };
-  }, [deviceId, deviceName, isRegistered]);
+  }, [deviceId, deviceName, isRegistered, familyGroupCode, isAudioEnabled]);
 
   // 3. Audio looping effect for active incoming call
   const myIncomingCall = activeCalls.find((call) => call.toDeviceId === deviceId && call.status === "active");
@@ -267,22 +221,6 @@ export default function App() {
     };
   }, [myIncomingCall, isAudioEnabled]);
 
-  // 4. Register Device on Server Helper
-  async function registerDeviceOnServer(id: string, name: string) {
-    try {
-      const res = await fetch("/api/devices/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, name }),
-      });
-      if (!res.ok) throw new Error("Registration failed");
-      const data = await res.json();
-      return data;
-    } catch (err) {
-      console.error("Server registration failed:", err);
-    }
-  }
-
   // Handle register submission
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -291,7 +229,6 @@ export default function App() {
 
     setIsRegistering(true);
     try {
-      await registerDeviceOnServer(deviceId, finalName);
       localStorage.setItem("family_bell_device_name", finalName);
       setDeviceName(finalName);
       setIsRegistered(true);
@@ -302,8 +239,6 @@ export default function App() {
     }
   }
 
-
-
   // Handle call creation
   async function handleCall() {
     if (!selectedTargetId || !selectedRequirement) return;
@@ -311,26 +246,21 @@ export default function App() {
     const reqText = selectedRequirement === "その他" ? customRequirement.trim() : selectedRequirement;
     if (!reqText) return;
 
+    const targetDev = devices.find(d => d.id === selectedTargetId);
+    const targetName = targetDev ? targetDev.name : "受信者";
+
     setIsCalling(true);
     try {
-      const res = await fetch("/api/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fromDeviceId: deviceId,
-          toDeviceId: selectedTargetId,
-          requirement: reqText,
-        }),
-      });
-      if (res.ok) {
-        // Clear selection states upon success
-        setSelectedRequirement(null);
-        setCustomRequirement("");
-        // Show short "Calling" visual feedback
-        setTimeout(() => setIsCalling(false), 500);
-      } else {
-        setIsCalling(false);
+      if (mqttServiceRef.current) {
+        mqttServiceRef.current.makeCall(selectedTargetId, targetName, reqText);
       }
+      
+      // Clear selection states upon success
+      setSelectedRequirement(null);
+      setCustomRequirement("");
+      
+      // Show short "Calling" visual feedback
+      setTimeout(() => setIsCalling(false), 500);
     } catch (err) {
       console.error(err);
       setIsCalling(false);
@@ -340,14 +270,9 @@ export default function App() {
   // Handle call stopping (receiver side)
   async function handleStopCall(callId: string) {
     try {
-      await fetch("/api/calls/stop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callId,
-          stoppedByDeviceId: deviceId,
-        }),
-      });
+      if (mqttServiceRef.current) {
+        mqttServiceRef.current.stopCall(callId);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -368,6 +293,21 @@ export default function App() {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  // Change Family Code
+  function handleChangeFamilyCode() {
+    const newCode = prompt("新しい「合言葉」を入力してください（例: 家族ベル-1234、たろう家 など）", familyGroupCode);
+    if (newCode !== null) {
+      const cleanCode = newCode.trim();
+      if (cleanCode) {
+        localStorage.setItem("family_bell_group_code", cleanCode);
+        setFamilyGroupCode(cleanCode);
+        if (mqttServiceRef.current) {
+          mqttServiceRef.current.updateCredentials(deviceName, cleanCode);
+        }
+      }
+    }
   }
 
   // Dismiss notification toast
@@ -495,6 +435,47 @@ export default function App() {
               </button>
             </div>
           </header>
+
+          {/* 🔑 Family Code Pairing Card */}
+          <div className="bg-[#FFFDF9] border border-[#FBE3CC] rounded-2xl p-4 mb-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-sm">
+            <div className="flex items-center gap-3 text-left">
+              <span className="p-2 bg-[#FFF2E2] rounded-xl text-[#E67E22] shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </span>
+              <div>
+                <p className="font-extrabold text-neutral-800 text-sm">
+                  ご家族の「合言葉」
+                </p>
+                <p className="text-xs text-neutral-500">
+                  同じ合言葉を登録したスマートフォンやタブレット同士で呼び出せます。
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="px-3.5 py-1.5 bg-white border border-neutral-200 rounded-xl font-mono font-bold text-[#E67E22] text-sm tracking-wider flex items-center justify-between gap-2 shadow-inner w-full sm:w-auto">
+                <span>{familyGroupCode}</span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(familyGroupCode);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="p-1 hover:bg-[#FDF5E6] rounded transition-all cursor-pointer text-neutral-400 hover:text-[#E67E22]"
+                  title="合言葉をコピー"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              
+              <button
+                onClick={handleChangeFamilyCode}
+                className="px-3.5 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap"
+              >
+                合言葉を変更
+              </button>
+            </div>
+          </div>
 
           {/* Alert Toasts (Someone stopped our bell) */}
           <AnimatePresence>
