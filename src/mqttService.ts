@@ -19,7 +19,7 @@ export class MqttService {
   // Callbacks for React state synchronization
   private onDevicesUpdated: (devices: Device[]) => void = () => {};
   private onCallsUpdated: (calls: Call[]) => void = () => {};
-  private onCallStopped: (info: { stoppedByDeviceName: string; callerDeviceId: string }) => void = () => {};
+  private onCallStopped: (info: { stoppedByDeviceName: string; stoppedByDeviceId: string; callerDeviceId: string }) => void = () => {};
   private onConnectionStatusChanged: (isOnline: boolean) => void = () => {};
 
   private heartbeatTimer: any = null;
@@ -32,7 +32,7 @@ export class MqttService {
     callbacks: {
       onDevicesUpdated: (devices: Device[]) => void;
       onCallsUpdated: (calls: Call[]) => void;
-      onCallStopped: (info: { stoppedByDeviceName: string; callerDeviceId: string }) => void;
+      onCallStopped: (info: { stoppedByDeviceName: string; stoppedByDeviceId: string; callerDeviceId: string }) => void;
       onConnectionStatusChanged: (isOnline: boolean) => void;
     }
   ) {
@@ -321,6 +321,7 @@ export class MqttService {
             if (existingCall.fromDeviceId === this.deviceId) {
               this.onCallStopped({
                 stoppedByDeviceName: data.stoppedByDeviceName || "受信者",
+                stoppedByDeviceId: data.stoppedByDeviceId || "",
                 callerDeviceId: existingCall.fromDeviceId
               });
             }

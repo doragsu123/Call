@@ -25,7 +25,9 @@ import {
   AlertCircle, 
   ExternalLink,
   RefreshCw,
-  BellOff
+  BellOff,
+  Sun,
+  Moon
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -127,6 +129,9 @@ export default function App() {
   const [customRequirement, setCustomRequirement] = useState<string>("");
   const [isCalling, setIsCalling] = useState<boolean>(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState<boolean>(true);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem("family_bell_dark_mode") === "true";
+  });
   
   // Notification banner state
   const [stoppedNotification, setStoppedNotification] = useState<{
@@ -163,6 +168,16 @@ export default function App() {
     setFamilyGroupCode(currentCode);
   }, []);
 
+  // 1b. Initialize & Sync Dark Mode
+  useEffect(() => {
+    localStorage.setItem("family_bell_dark_mode", String(isDarkMode));
+    if (isDarkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [isDarkMode]);
+
   // 2. Configure Real-Time Connection (MQTT)
   useEffect(() => {
     if (!deviceId || !deviceName || !isRegistered || !familyGroupCode) return;
@@ -180,6 +195,10 @@ export default function App() {
           setActiveCalls(calls);
         },
         onCallStopped: (info) => {
+          if (info.stoppedByDeviceId === deviceId) {
+            // Do not display notification banner when calling was canceled by our own device
+            return;
+          }
           setStoppedNotification({
             message: `🔔 「${info.stoppedByDeviceName}」がベルを止めました！`,
             id: Date.now(),
@@ -322,7 +341,11 @@ export default function App() {
   const myOutgoingCall = activeCalls.find((call) => call.fromDeviceId === deviceId && call.status === "active");
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-neutral-800 font-sans selection:bg-[#F2DFD3] selection:text-neutral-900 pb-12 transition-all duration-300">
+    <div className={`min-h-screen transition-all duration-300 font-sans pb-12 ${
+      isDarkMode 
+        ? "bg-[#121212] text-neutral-100 selection:bg-neutral-800" 
+        : "bg-[#FDFBF7] text-neutral-800 selection:bg-[#F2DFD3] selection:text-neutral-900"
+    }`}>
       
       {/* 1. REGISTRATION STATE (Not registered) */}
       {!isRegistered ? (
@@ -330,9 +353,13 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-neutral-100 p-8 md:p-10 text-center"
+            className={`w-full max-w-lg rounded-2xl shadow-xl border p-8 md:p-10 text-center transition-all duration-300 ${
+              isDarkMode ? "bg-[#1E1E1E] border-neutral-800/80 shadow-black/20" : "bg-white border-neutral-100"
+            }`}
           >
-            <div className="inline-flex mb-6 overflow-hidden rounded-full border-4 border-[#FDF5E6] shadow-md bg-white">
+            <div className={`inline-flex mb-6 overflow-hidden rounded-full border-4 shadow-md transition-all duration-300 ${
+              isDarkMode ? "border-neutral-800 bg-[#1E1E1E]" : "border-[#FDF5E6] bg-white"
+            }`}>
               <motion.img 
                 src={bellIcon} 
                 alt="Family Bell" 
@@ -343,17 +370,23 @@ export default function App() {
               />
             </div>
 
-            <h1 className="text-3xl font-extrabold tracking-tight mb-2 text-[#3E2723]">
+            <h1 className={`text-3xl font-extrabold tracking-tight mb-2 transition-colors ${
+              isDarkMode ? "text-neutral-100" : "text-[#3E2723]"
+            }`}>
               家族呼び出しベル
             </h1>
-            <p className="text-sm text-neutral-500 mb-8 max-w-sm mx-auto leading-relaxed">
+            <p className={`text-sm mb-8 max-w-sm mx-auto leading-relaxed transition-colors ${
+              isDarkMode ? "text-neutral-400" : "text-neutral-500"
+            }`}>
               まずは、このスマートフォンやタブレットにあなたの名前を登録しましょう。
             </p>
 
             {/* Large text input */}
             <form onSubmit={handleRegister} className="space-y-6">
               <div className="text-left">
-                <label htmlFor="device-name" className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                <label htmlFor="device-name" className={`block text-xs font-semibold uppercase tracking-wider mb-2 transition-colors ${
+                  isDarkMode ? "text-neutral-500" : "text-neutral-400"
+                }`}>
                   端末の名前を入力してください
                 </label>
                 <input
@@ -363,7 +396,11 @@ export default function App() {
                   placeholder="例: お父さん、お母さん、太郎"
                   value={inputName}
                   onChange={(e) => setInputName(e.target.value)}
-                  className="w-full text-center px-4 py-4 text-2xl font-bold bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#E67E22] focus:border-[#E67E22] transition-all placeholder:text-neutral-300 placeholder:font-normal"
+                  className={`w-full text-center px-4 py-4 text-2xl font-bold rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#E67E22] focus:border-[#E67E22] transition-all ${
+                    isDarkMode 
+                      ? "bg-[#2D2D2D] border-neutral-700 text-white placeholder:text-neutral-600" 
+                      : "bg-neutral-50 border-neutral-200 text-neutral-800 placeholder:text-neutral-300"
+                  } placeholder:font-normal`}
                 />
               </div>
 
@@ -391,18 +428,28 @@ export default function App() {
         <div id="main-dashboard" className="max-w-4xl mx-auto px-4 pt-3 pb-3">
           
           {/* Header Bar */}
-          <header className="flex items-center justify-between bg-white/70 backdrop-blur-md border border-neutral-100 rounded-2xl px-4 py-2.5 mb-4 shadow-sm">
+          <header className={`flex items-center justify-between border rounded-2xl px-4 py-2.5 mb-4 shadow-sm transition-all duration-300 ${
+            isDarkMode 
+              ? "bg-[#1E1E1E]/80 backdrop-blur-md border-neutral-800 text-white" 
+              : "bg-white/70 backdrop-blur-md border border-neutral-100"
+          }`}>
             <div className="flex items-center gap-3">
-              <div className="p-1.5 bg-[#FDF5E6] rounded-xl text-[#E67E22]">
+              <div className={`p-1.5 rounded-xl transition-all duration-300 ${
+                isDarkMode ? "bg-[#3E2723] text-[#FFB74D]" : "bg-[#FDF5E6] text-[#E67E22]"
+              }`}>
                 <Bell className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="font-extrabold text-base tracking-tight text-neutral-800">
+                <h1 className={`font-extrabold text-base tracking-tight transition-colors ${
+                  isDarkMode ? "text-neutral-100" : "text-neutral-800"
+                }`}>
                   家族呼び出しベル
                 </h1>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-neutral-300"}`} />
-                  <span className="text-[9px] font-medium text-neutral-400">
+                  <span className={`text-[9px] font-medium transition-colors ${
+                    isDarkMode ? "text-neutral-400" : "text-neutral-400"
+                  }`}>
                     {isOnline ? "オンライン" : "オフライン（接続中）"}
                   </span>
                 </div>
@@ -411,13 +458,27 @@ export default function App() {
 
             {/* Controls */}
             <div className="flex items-center gap-2">
+              {/* Dark mode toggle */}
+              <button
+                id="dark-mode-toggle"
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className={`p-1.5 rounded-lg transition-all border ${
+                  isDarkMode 
+                    ? "bg-[#333333] text-[#FFB74D] border-neutral-700 hover:bg-[#444444]" 
+                    : "bg-[#FDF5E6] text-[#E67E22] border-[#FBE3CC] hover:bg-[#FBE3CC]/50"
+                }`}
+                title={isDarkMode ? "ライトモードに切り替え" : "ダークモードに切り替え"}
+              >
+                {isDarkMode ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
+              </button>
+
               <button
                 id="audio-toggle"
                 onClick={() => setIsAudioEnabled(!isAudioEnabled)}
                 className={`p-1.5 rounded-lg transition-all border ${
                   isAudioEnabled 
-                    ? "bg-[#FDF5E6] text-[#E67E22] border-[#FBE3CC]" 
-                    : "bg-neutral-50 text-neutral-400 border-neutral-100"
+                    ? (isDarkMode ? "bg-[#3E2723] text-[#FFB74D] border-[#5D3A1A]" : "bg-[#FDF5E6] text-[#E67E22] border-[#FBE3CC]") 
+                    : (isDarkMode ? "bg-[#2D2D2D] text-neutral-500 border-neutral-800" : "bg-neutral-50 text-neutral-400 border-neutral-100")
                 }`}
                 title={isAudioEnabled ? "通知音をミュート" : "通知音を有効化"}
               >
@@ -427,7 +488,11 @@ export default function App() {
               <button
                 id="current-device-badge"
                 onClick={handleResetDevice}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-700 transition-all cursor-pointer"
+                className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  isDarkMode 
+                    ? "bg-[#2D2D2D] hover:bg-[#3D3D3D] border-neutral-700 text-neutral-200" 
+                    : "bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700"
+                }`}
                 title="名前を変更する"
               >
                 <User className="w-3 h-3 text-neutral-400" />
@@ -437,23 +502,37 @@ export default function App() {
           </header>
 
           {/* 🔑 Family Code Pairing Card */}
-          <div className="bg-[#FFFDF9] border border-[#FBE3CC] rounded-2xl p-4 mb-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-sm">
+          <div className={`rounded-2xl p-4 mb-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-sm border transition-all duration-300 ${
+            isDarkMode 
+              ? "bg-[#1E1E1E] border-neutral-800 text-neutral-100" 
+              : "bg-[#FFFDF9] border-[#FBE3CC] text-neutral-850"
+          }`}>
             <div className="flex items-center gap-3 text-left">
-              <span className="p-2 bg-[#FFF2E2] rounded-xl text-[#E67E22] shrink-0">
+              <span className={`p-2 rounded-xl shrink-0 transition-colors duration-300 ${
+                isDarkMode ? "bg-[#3E2723] text-[#FFB74D]" : "bg-[#FFF2E2] text-[#E67E22]"
+              }`}>
                 <Sparkles className="w-5 h-5" />
               </span>
               <div>
-                <p className="font-extrabold text-neutral-800 text-sm">
+                <p className={`font-extrabold text-sm transition-colors duration-300 ${
+                  isDarkMode ? "text-neutral-100" : "text-neutral-800"
+                }`}>
                   ご家族の「合言葉」
                 </p>
-                <p className="text-xs text-neutral-500">
+                <p className={`text-xs transition-colors duration-300 ${
+                  isDarkMode ? "text-neutral-400" : "text-neutral-500"
+                }`}>
                   同じ合言葉を登録したスマートフォンやタブレット同士で呼び出せます。
                 </p>
               </div>
             </div>
             
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="px-3.5 py-1.5 bg-white border border-neutral-200 rounded-xl font-mono font-bold text-[#E67E22] text-sm tracking-wider flex items-center justify-between gap-2 shadow-inner w-full sm:w-auto">
+              <div className={`px-3.5 py-1.5 border rounded-xl font-mono font-bold text-sm tracking-wider flex items-center justify-between gap-2 shadow-inner w-full sm:w-auto transition-colors duration-300 ${
+                isDarkMode 
+                  ? "bg-[#2D2D2D] border-neutral-700 text-[#FFB74D]" 
+                  : "bg-white border-neutral-200 text-[#E67E22]"
+              }`}>
                 <span>{familyGroupCode}</span>
                 <button
                   onClick={() => {
@@ -461,7 +540,11 @@ export default function App() {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
                   }}
-                  className="p-1 hover:bg-[#FDF5E6] rounded transition-all cursor-pointer text-neutral-400 hover:text-[#E67E22]"
+                  className={`p-1 rounded transition-all cursor-pointer ${
+                    isDarkMode 
+                      ? "hover:bg-neutral-800 text-neutral-500 hover:text-[#FFB74D]" 
+                      : "hover:bg-[#FDF5E6] text-neutral-400 hover:text-[#E67E22]"
+                  }`}
                   title="合言葉をコピー"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -470,7 +553,11 @@ export default function App() {
               
               <button
                 onClick={handleChangeFamilyCode}
-                className="px-3.5 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap"
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap ${
+                  isDarkMode 
+                    ? "bg-[#2D2D2D] hover:bg-[#3D3D3D] text-neutral-200" 
+                    : "bg-neutral-100 hover:bg-neutral-200 text-neutral-700"
+                }`}
               >
                 合言葉を変更
               </button>
@@ -486,10 +573,16 @@ export default function App() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 id="call-stopped-banner"
-                className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6 shadow-md flex items-center justify-between gap-4"
+                className={`border rounded-xl p-4 mb-6 shadow-md flex items-center justify-between gap-4 transition-colors duration-300 ${
+                  isDarkMode 
+                    ? "bg-[#1B5E20]/20 border-[#2E7D32]/30 text-emerald-300" 
+                    : "bg-emerald-50 border-emerald-200 text-[#1B5E20]"
+                }`}
               >
-                <div className="flex items-center gap-3 text-emerald-800">
-                  <span className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg animate-bounce">
+                <div className="flex items-center gap-3">
+                  <span className={`p-1.5 rounded-lg animate-bounce ${
+                    isDarkMode ? "bg-[#2E7D32]/30 text-emerald-400" : "bg-emerald-100 text-emerald-600"
+                  }`}>
                     <Check className="w-5 h-5" />
                   </span>
                   <p className="font-bold text-sm md:text-base leading-snug">
@@ -499,7 +592,9 @@ export default function App() {
                 <button
                   id="dismiss-toast-btn"
                   onClick={handleDismissNotification}
-                  className="p-1.5 hover:bg-emerald-100 rounded-lg text-emerald-600 transition-all cursor-pointer"
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                    isDarkMode ? "hover:bg-neutral-800 text-neutral-400" : "hover:bg-emerald-100 text-emerald-600"
+                  }`}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -515,7 +610,11 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 id="outgoing-call-indicator"
-                className="bg-[#FFF8F0] border border-[#FBE3CC] rounded-2xl p-6 mb-6 shadow-md text-center relative overflow-hidden"
+                className={`rounded-2xl p-6 mb-6 shadow-md text-center relative overflow-hidden border transition-all duration-300 ${
+                  isDarkMode 
+                    ? "bg-[#2D1F15] border-[#5D3A1A] text-neutral-150" 
+                    : "bg-[#FFF8F0] border-[#FBE3CC] text-[#E67E22]"
+                }`}
               >
                 {/* Rippling radar animation behind */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
@@ -523,20 +622,26 @@ export default function App() {
                 </div>
 
                 <div className="relative z-10 flex flex-col items-center">
-                  <div className="p-3 bg-orange-100 text-[#E67E22] rounded-full mb-3 animate-pulse">
+                  <div className="p-3 bg-orange-100/20 text-[#E67E22] rounded-full mb-3 animate-pulse">
                     <BellRing className="w-8 h-8" />
                   </div>
                   <h3 className="text-lg font-extrabold text-[#E67E22] mb-1">
                     「{myOutgoingCall.toDeviceName.replace(" (シミュレータ)", "")}」を呼び出し中
                   </h3>
-                  <p className="text-sm font-semibold text-neutral-500 mb-4">
+                  <p className={`text-sm font-semibold mb-4 transition-colors duration-300 ${
+                    isDarkMode ? "text-neutral-400" : "text-neutral-500"
+                  }`}>
                     要件: {myOutgoingCall.requirement}
                   </p>
                   
                   <button
                     id="cancel-call-btn"
                     onClick={() => handleStopCall(myOutgoingCall.id)}
-                    className="px-5 py-2.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                    className={`px-5 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                      isDarkMode 
+                        ? "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700" 
+                        : "bg-neutral-200 hover:bg-neutral-300 text-neutral-700"
+                    }`}
                   >
                     <X className="w-3.5 h-3.5" />
                     呼び出しをキャンセル
@@ -553,17 +658,19 @@ export default function App() {
             <section id="recipient-selection">
               <h2 className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-3.5 flex items-center gap-2">
                 <span>呼び出し相手を選択</span>
-                <span className="h-[1px] flex-1 bg-neutral-100" />
+                <span className={`h-[1px] flex-1 ${isDarkMode ? "bg-neutral-800" : "bg-neutral-100"}`} />
               </h2>
 
               {otherDevices.length === 0 ? (
                 /* No other devices view */
-                <div className="bg-white border border-neutral-100 rounded-2xl p-6 text-center shadow-sm">
+                <div className={`border rounded-2xl p-6 text-center shadow-sm transition-all duration-300 ${
+                  isDarkMode ? "bg-[#1E1E1E] border-neutral-800" : "bg-white border border-neutral-100"
+                }`}>
                   <AlertCircle className="w-8 h-8 text-[#E67E22] mx-auto mb-3" />
-                  <p className="font-bold text-neutral-700 text-lg mb-1">
+                  <p className={`font-bold text-lg mb-1 ${isDarkMode ? "text-neutral-100" : "text-neutral-700"}`}>
                     対象がいません
                   </p>
-                  <p className="text-xs text-neutral-400 max-w-md mx-auto leading-relaxed mb-5">
+                  <p className={`text-xs max-w-md mx-auto leading-relaxed mb-5 ${isDarkMode ? "text-neutral-400" : "text-neutral-400"}`}>
                     別のスマートフォンやパソコンでこのアプリのURLを開き、お名前を登録するとここに呼び出し対象の名前が表示されます。
                   </p>
 
@@ -571,7 +678,11 @@ export default function App() {
                     <button
                       id="copy-app-url-btn"
                       onClick={handleCopyUrl}
-                      className="w-full sm:w-auto px-4 py-2.5 bg-[#FAF9F6] hover:bg-[#F5F2EB] border border-neutral-200 text-xs font-bold text-neutral-700 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      className={`w-full sm:w-auto px-4 py-2.5 border text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        isDarkMode 
+                          ? "bg-[#2D2D2D] hover:bg-[#3D3D3D] border-neutral-700 text-neutral-200" 
+                          : "bg-[#FAF9F6] hover:bg-[#F5F2EB] border-neutral-200 text-neutral-700"
+                      }`}
                     >
                       {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-neutral-400" />}
                       {copied ? "URLをコピーしました！" : "アプリのURLをコピー"}
@@ -595,8 +706,8 @@ export default function App() {
                         }}
                         className={`group relative text-center py-4 px-3 rounded-xl border transition-all duration-300 shadow-sm cursor-pointer flex flex-col items-center justify-center ${
                           isSelected 
-                            ? "bg-[#FDF5E6] text-[#E67E22] border-[#E67E22] ring-2 ring-[#E67E22]/10" 
-                            : "bg-white hover:bg-neutral-50/50 text-neutral-700 border-neutral-200 hover:border-neutral-300"
+                            ? (isDarkMode ? "bg-[#3D2612] text-[#FFB74D] border-[#FFB74D] ring-2 ring-[#FFB74D]/10" : "bg-[#FDF5E6] text-[#E67E22] border-[#E67E22] ring-2 ring-[#E67E22]/10") 
+                            : (isDarkMode ? "bg-[#1E1E1E] hover:bg-neutral-800 text-neutral-200 border-neutral-800 hover:border-neutral-700" : "bg-white hover:bg-neutral-50/50 text-neutral-700 border-neutral-200 hover:border-neutral-300")
                         }`}
                       >
                         {/* Status indicators */}
@@ -611,11 +722,11 @@ export default function App() {
                         {/* Icon */}
                         <div className={`p-2.5 rounded-full mb-2 transition-all duration-300 ${
                           isSelected 
-                            ? "bg-white text-[#E67E22] shadow-sm" 
-                            : "bg-neutral-50 text-neutral-400 group-hover:bg-neutral-100"
+                            ? (isDarkMode ? "bg-[#5D3A1A] text-[#FFB74D] shadow-sm" : "bg-white text-[#E67E22] shadow-sm") 
+                            : (isDarkMode ? "bg-[#2D2D2D] text-neutral-400 group-hover:bg-[#3D3D3D]" : "bg-neutral-50 text-neutral-400 group-hover:bg-neutral-100")
                         }`}>
                           {isActiveTarget ? (
-                            <BellRing className="w-5 h-5 text-[#E67E22] animate-pulse" />
+                            <BellRing className={`w-5 h-5 animate-pulse ${isDarkMode ? "text-[#FFB74D]" : "text-[#E67E22]"}`} />
                           ) : (
                             <User className="w-5 h-5" />
                           )}
@@ -627,7 +738,9 @@ export default function App() {
                         </span>
 
                         {device.isDemo && (
-                          <span className="mt-1 px-1.5 py-0.5 bg-[#FAF2EB] text-[#E67E22] text-[9px] font-bold rounded">
+                          <span className={`mt-1 px-1.5 py-0.5 text-[9px] font-bold rounded ${
+                            isDarkMode ? "bg-[#3D2612] text-[#FFB74D]" : "bg-[#FAF2EB] text-[#E67E22]"
+                          }`}>
                             シミュレータ
                           </span>
                         )}
@@ -654,11 +767,15 @@ export default function App() {
                   id="requirement-selection"
                   className="overflow-hidden"
                 >
-                  <div className="bg-white border border-neutral-200 rounded-2xl p-5 md:p-6 shadow-sm mt-2">
+                  <div className={`border rounded-2xl p-5 md:p-6 shadow-sm mt-2 transition-all duration-300 ${
+                    isDarkMode ? "bg-[#1E1E1E] border-neutral-800" : "bg-white border border-neutral-200"
+                  }`}>
                     
-                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-neutral-100">
+                    <div className={`flex items-center justify-between mb-4 pb-3 border-b ${
+                      isDarkMode ? "border-neutral-800" : "border-neutral-100"
+                    }`}>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-extrabold text-neutral-800">
+                        <span className={`font-extrabold ${isDarkMode ? "text-white" : "text-neutral-800"}`}>
                           {devices.find((d) => d.id === selectedTargetId)?.name.replace(" (シミュレータ)", "")}
                         </span>
                         <span className="text-neutral-400 text-xs">さんへの要件を選択</span>
@@ -670,7 +787,9 @@ export default function App() {
                           setSelectedRequirement(null);
                           setCustomRequirement("");
                         }}
-                        className="p-1 hover:bg-neutral-50 rounded-lg text-neutral-400 hover:text-neutral-600 transition-all"
+                        className={`p-1 rounded-lg transition-all ${
+                          isDarkMode ? "hover:bg-neutral-800 text-neutral-500 hover:text-white" : "hover:bg-neutral-50 text-neutral-400 hover:text-neutral-600"
+                        }`}
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -685,8 +804,8 @@ export default function App() {
                         onClick={() => setSelectedRequirement("ご飯")}
                         className={`py-3.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold cursor-pointer ${
                           selectedRequirement === "ご飯"
-                            ? "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm"
-                            : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50"
+                            ? (isDarkMode ? "bg-[#3D2612] text-[#FFB74D] border-[#FFB74D] shadow-sm" : "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm")
+                            : (isDarkMode ? "bg-[#2D2D2D] text-neutral-300 border-neutral-800 hover:bg-[#3D3D3D]" : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50")
                         }`}
                       >
                         <Utensils className="w-5 h-5 text-amber-500" />
@@ -699,8 +818,8 @@ export default function App() {
                         onClick={() => setSelectedRequirement("風呂入って")}
                         className={`py-3.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold cursor-pointer ${
                           selectedRequirement === "風呂入って"
-                            ? "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm"
-                            : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50"
+                            ? (isDarkMode ? "bg-[#3D2612] text-[#FFB74D] border-[#FFB74D] shadow-sm" : "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm")
+                            : (isDarkMode ? "bg-[#2D2D2D] text-neutral-300 border-neutral-800 hover:bg-[#3D3D3D]" : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50")
                         }`}
                       >
                         <Bath className="w-5 h-5 text-blue-500" />
@@ -713,8 +832,8 @@ export default function App() {
                         onClick={() => setSelectedRequirement("風呂洗って")}
                         className={`py-3.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold cursor-pointer ${
                           selectedRequirement === "風呂洗って"
-                            ? "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm"
-                            : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50"
+                            ? (isDarkMode ? "bg-[#3D2612] text-[#FFB74D] border-[#FFB74D] shadow-sm" : "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm")
+                            : (isDarkMode ? "bg-[#2D2D2D] text-neutral-300 border-neutral-800 hover:bg-[#3D3D3D]" : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50")
                         }`}
                       >
                         <Sparkles className="w-5 h-5 text-emerald-500" />
@@ -727,8 +846,8 @@ export default function App() {
                         onClick={() => setSelectedRequirement("洗濯手伝って")}
                         className={`py-3.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold cursor-pointer ${
                           selectedRequirement === "洗濯手伝って"
-                            ? "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm"
-                            : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50"
+                            ? (isDarkMode ? "bg-[#3D2612] text-[#FFB74D] border-[#FFB74D] shadow-sm" : "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm")
+                            : (isDarkMode ? "bg-[#2D2D2D] text-neutral-300 border-neutral-800 hover:bg-[#3D3D3D]" : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50")
                         }`}
                       >
                         <Shirt className="w-5 h-5 text-purple-500" />
@@ -741,8 +860,8 @@ export default function App() {
                         onClick={() => setSelectedRequirement("その他")}
                         className={`py-3.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold col-span-2 md:col-span-1 cursor-pointer ${
                           selectedRequirement === "その他"
-                            ? "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm"
-                            : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50"
+                            ? (isDarkMode ? "bg-[#3D2612] text-[#FFB74D] border-[#FFB74D] shadow-sm" : "bg-[#FAF2EB] text-[#E67E22] border-[#E67E22] shadow-sm")
+                            : (isDarkMode ? "bg-[#2D2D2D] text-neutral-300 border-neutral-800 hover:bg-[#3D3D3D]" : "bg-neutral-50 text-neutral-600 border-neutral-100 hover:bg-neutral-100/50")
                         }`}
                       >
                         <MessageSquare className="w-5 h-5 text-teal-500" />
@@ -770,7 +889,11 @@ export default function App() {
                             placeholder="例: ゴミ出しして、買い物おねがい 等"
                             value={customRequirement}
                             onChange={(e) => setCustomRequirement(e.target.value)}
-                            className="w-full px-3.5 py-3.5 bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#E67E22] focus:border-[#E67E22] text-sm font-semibold text-neutral-800 transition-all placeholder:text-neutral-300"
+                            className={`w-full px-3.5 py-3.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#E67E22] focus:border-[#E67E22] text-sm font-semibold transition-all ${
+                              isDarkMode 
+                                ? "bg-[#2D2D2D] border-neutral-700 text-white placeholder:text-neutral-600" 
+                                : "bg-neutral-50 border-neutral-200 text-neutral-800 placeholder:text-neutral-350"
+                            }`}
                           />
                         </motion.div>
                       )}
