@@ -275,7 +275,10 @@ app.get("/api/stream", (req, res) => {
 
 // Integrate Vite Dev Server or Production Build
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction = process.env.NODE_ENV === "production" || 
+    (process.argv[1] && (process.argv[1].includes("dist") || process.argv[1].endsWith("server.cjs")));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
